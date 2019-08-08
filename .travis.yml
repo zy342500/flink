@@ -58,7 +58,7 @@ before_install:
 notifications:
   email:
     recipients:
-      secure: Tnf61eG2XC4uH9VOS2FnmDZVKMQqoXxQh1tPBuj7wcXCxSBtRKZtwrLHeQYDaH+cdDvy4rgzInKxq0imUyVnZ3vl3eTJyCtUW33RanUN8g4zZANy1nj9NbyhE7U8MCkIOMEuIkqGrI1XfFU0k+OMKaeLlUWtNUkBxeZVueL0iP0=
+      secure: ZPnuH/NGT0AJv1pWx++Xi9Tn4nz2zdXfIIXeblGugAQLE/6PStckK7NG7Bh5rIPmCUgktb1PQ6dgVFPFchFarNL6ctXdqcale/T3mTaf6xOJ/ZVezRFKBxKGQCByFP7OBUCorqYsBq+aw7XQ2X3QM2mljkHxV5KyRXLdPIUKK8s=
     on_success: change
     on_pull_requests: false
   slack:
