@@ -20,29 +20,57 @@
 source "$(dirname "$0")"/common.sh
 
 INPUT_TYPE=${1:-file}
+RESULT_HASH="5a9945c9ab08890b2a0f6b31a4437d57"
+S3_PREFIX=temp/test_batch_wordcount-$(uuidgen)
+OUTPUT_PATH="${TEST_DATA_DIR}/out/wc_out"
+
+fetch_complete_result=()
+
 case $INPUT_TYPE in
     (file)
-        INPUT_LOCATION="${TEST_INFRA_DIR}/test-data/words"
+        ARGS="--execution-mode BATCH --input ${TEST_INFRA_DIR}/test-data/words --output ${OUTPUT_PATH}"
     ;;
     (hadoop)
         source "$(dirname "$0")"/common_s3.sh
         s3_setup hadoop
-        INPUT_LOCATION="${S3_TEST_DATA_WORDS_URI}"
+        ARGS="--execution-mode BATCH --input ${S3_TEST_DATA_WORDS_URI} --output s3://$IT_CASE_S3_BUCKET/$S3_PREFIX"
+        OUTPUT_PATH="$TEST_DATA_DIR/$S3_PREFIX"
+        on_exit "s3_delete_by_full_path_prefix '$S3_PREFIX'"
+        fetch_complete_result=(s3_get_by_full_path_and_filename_prefix "$OUTPUT_PATH" "${S3_PREFIX}" true)
+    ;;
+    (hadoop_minio)
+        source "$(dirname "$0")"/common_s3_minio.sh
+        s3_setup hadoop
+        ARGS="--execution-mode BATCH --input ${S3_TEST_DATA_WORDS_URI} --output s3://$IT_CASE_S3_BUCKET/$S3_PREFIX"
+        OUTPUT_PATH="$TEST_INFRA_DIR/$IT_CASE_S3_BUCKET/$S3_PREFIX"
     ;;
     (hadoop_with_provider)
         source "$(dirname "$0")"/common_s3.sh
         s3_setup_with_provider hadoop "fs.s3a.aws.credentials.provider"
-        INPUT_LOCATION="${S3_TEST_DATA_WORDS_URI}"
+        ARGS="--execution-mode BATCH --input ${S3_TEST_DATA_WORDS_URI} --output s3://$IT_CASE_S3_BUCKET/$S3_PREFIX"
+        OUTPUT_PATH="$TEST_DATA_DIR/$S3_PREFIX"
+        on_exit "s3_delete_by_full_path_prefix '$S3_PREFIX'"
+        fetch_complete_result=(s3_get_by_full_path_and_filename_prefix "$OUTPUT_PATH" "${S3_PREFIX}" true)
     ;;
     (presto)
         source "$(dirname "$0")"/common_s3.sh
         s3_setup presto
-        INPUT_LOCATION="${S3_TEST_DATA_WORDS_URI}"
+        ARGS="--execution-mode BATCH --input ${S3_TEST_DATA_WORDS_URI} --output s3://$IT_CASE_S3_BUCKET/$S3_PREFIX"
+        OUTPUT_PATH="$TEST_DATA_DIR/$S3_PREFIX"
+        on_exit "s3_delete_by_full_path_prefix '$S3_PREFIX'"
+        fetch_complete_result=(s3_get_by_full_path_and_filename_prefix "$OUTPUT_PATH" "${S3_PREFIX}" true)
+    ;;
+    (presto_minio)
+        source "$(dirname "$0")"/common_s3_minio.sh
+        s3_setup presto
+        ARGS="--execution-mode BATCH --input ${S3_TEST_DATA_WORDS_URI} --output s3://$IT_CASE_S3_BUCKET/$S3_PREFIX"
+        OUTPUT_PATH="$TEST_INFRA_DIR/$IT_CASE_S3_BUCKET/$S3_PREFIX"
     ;;
     (dummy-fs)
         source "$(dirname "$0")"/common_dummy_fs.sh
         dummy_fs_setup
-        INPUT_LOCATION="dummy://localhost/words"
+        ARGS="--execution-mode BATCH --input dummy://localhost/words --input anotherDummy://localhost/words --output ${OUTPUT_PATH}"
+        RESULT_HASH="41d097718a0b00f67fe13d21048d1757"
     ;;
     (*)
         echo "Unknown input type $INPUT_TYPE"
@@ -50,13 +78,19 @@ case $INPUT_TYPE in
     ;;
 esac
 
-OUTPUT_LOCATION="${TEST_DATA_DIR}/out/wc_out"
-
-mkdir -p "${TEST_DATA_DIR}"
-
+mkdir -p "$(dirname $OUTPUT_PATH)"
 start_cluster
 
 # The test may run against different source types.
 # But the sources should provide the same test data, so the checksum stays the same for all tests.
-"${FLINK_DIR}/bin/flink" run -p 1 "${FLINK_DIR}/examples/batch/WordCount.jar" --input "${INPUT_LOCATION}" --output "${OUTPUT_LOCATION}"
-check_result_hash "WordCount (${INPUT_TYPE})" "${OUTPUT_LOCATION}" "72a690412be8928ba239c2da967328a5"
+${FLINK_DIR}/bin/flink run -p 1 ${FLINK_DIR}/examples/streaming/WordCount.jar ${ARGS}
+# Fetches result from AWS s3 to the OUTPUT_PATH, no-op for other filesystems and minio-based tests
+
+# it seems we need a function for retry_times
+function fetch_it() {
+  ${fetch_complete_result[@]}
+}
+retry_times 10 5 fetch_it
+
+OUTPUT_FILES=$(find "${OUTPUT_PATH}" -type f)
+check_result_hash "WordCount (${INPUT_TYPE})" "${OUTPUT_FILES}" "${RESULT_HASH}"

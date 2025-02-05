@@ -18,14 +18,14 @@
 
 package org.apache.flink.runtime.webmonitor.handlers.utils;
 
-import org.apache.flink.api.java.ExecutionEnvironment;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.sink.v2.DiscardingSink;
 
-/**
- * Simple test program.
- */
+/** Simple test program. */
 public class TestProgram {
-	public static void main(String[] args) throws Exception {
-		ExecutionEnvironment env = ExecutionEnvironment.getExecutionEnvironment();
-		env.fromElements("hello", "world").print();
-	}
+    public static void main(String[] args) throws Exception {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.fromData("hello", "world").sinkTo(new DiscardingSink<>());
+        env.execute();
+    }
 }

@@ -18,19 +18,19 @@
 
 package org.apache.flink.runtime.webmonitor.testutils;
 
-import org.apache.flink.api.java.ExecutionEnvironment;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.sink.v2.DiscardingSink;
 
-/**
- * Simple test program that exposes passed arguments.
- */
+/** Simple test program that exposes passed arguments. */
 public class ParameterProgram {
 
-	public static volatile String[] actualArguments = null;
+    public static volatile String[] actualArguments = null;
 
-	public static void main(String[] args) throws Exception {
-		actualArguments = args;
+    public static void main(String[] args) throws Exception {
+        actualArguments = args;
 
-		ExecutionEnvironment env = ExecutionEnvironment.getExecutionEnvironment();
-		env.fromElements("hello", "world").print();
-	}
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.fromData("hello", "world").sinkTo(new DiscardingSink<>());
+        env.execute();
+    }
 }

@@ -20,67 +20,67 @@ package org.apache.flink.formats.avro;
 
 import org.apache.flink.api.common.io.InputFormat;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
-import org.apache.flink.api.java.DataSet;
-import org.apache.flink.api.java.ExecutionEnvironment;
 import org.apache.flink.api.java.typeutils.PojoTypeInfo;
 import org.apache.flink.api.java.typeutils.TypeExtractor;
 import org.apache.flink.core.fs.Path;
+import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-/**
- * Tests for the type extraction of the {@link AvroInputFormat}.
- */
-public class AvroInputFormatTypeExtractionTest {
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.fail;
 
-	@Test
-	public void testTypeExtraction() {
-		try {
-			InputFormat<MyAvroType, ?> format = new AvroInputFormat<MyAvroType>(new Path("file:///ignore/this/file"), MyAvroType.class);
+/** Tests for the type extraction of the {@link AvroInputFormat}. */
+class AvroInputFormatTypeExtractionTest {
 
-			TypeInformation<?> typeInfoDirect = TypeExtractor.getInputFormatTypes(format);
+    @Test
+    void testTypeExtraction() {
+        try {
+            InputFormat<MyAvroType, ?> format =
+                    new AvroInputFormat<MyAvroType>(
+                            new Path("file:///ignore/this/file"), MyAvroType.class);
 
-			ExecutionEnvironment env = ExecutionEnvironment.getExecutionEnvironment();
-			DataSet<MyAvroType> input = env.createInput(format);
-			TypeInformation<?> typeInfoDataSet = input.getType();
+            TypeInformation<?> typeInfoDirect = TypeExtractor.getInputFormatTypes(format);
 
-			Assert.assertTrue(typeInfoDirect instanceof PojoTypeInfo);
-			Assert.assertTrue(typeInfoDataSet instanceof PojoTypeInfo);
+            StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+            DataStream<MyAvroType> input = env.createInput(format);
+            TypeInformation<?> typeInfoDataSet = input.getType();
 
-			Assert.assertEquals(MyAvroType.class, typeInfoDirect.getTypeClass());
-			Assert.assertEquals(MyAvroType.class, typeInfoDataSet.getTypeClass());
-		} catch (Exception e) {
-			e.printStackTrace();
-			Assert.fail(e.getMessage());
-		}
-	}
+            assertThat(typeInfoDirect).isInstanceOf(PojoTypeInfo.class);
+            assertThat(typeInfoDataSet).isInstanceOf(PojoTypeInfo.class);
 
-	/**
-	 * Test type.
-	 */
-	public static final class MyAvroType {
+            assertThat(typeInfoDirect.getTypeClass()).isEqualTo(MyAvroType.class);
+            assertThat(typeInfoDataSet.getTypeClass()).isEqualTo(MyAvroType.class);
+        } catch (Exception e) {
+            e.printStackTrace();
+            fail(e.getMessage());
+        }
+    }
 
-		public String theString;
+    /** Test type. */
+    public static final class MyAvroType {
 
-		public MyAvroType recursive;
+        public String theString;
 
-		private double aDouble;
+        public MyAvroType recursive;
 
-		public double getaDouble() {
-			return aDouble;
-		}
+        private double aDouble;
 
-		public void setaDouble(double aDouble) {
-			this.aDouble = aDouble;
-		}
+        public double getaDouble() {
+            return aDouble;
+        }
 
-		public void setTheString(String theString) {
-			this.theString = theString;
-		}
+        public void setaDouble(double aDouble) {
+            this.aDouble = aDouble;
+        }
 
-		public String getTheString() {
-			return theString;
-		}
-	}
+        public void setTheString(String theString) {
+            this.theString = theString;
+        }
+
+        public String getTheString() {
+            return theString;
+        }
+    }
 }

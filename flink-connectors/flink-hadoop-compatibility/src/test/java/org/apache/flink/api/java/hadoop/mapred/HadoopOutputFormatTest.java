@@ -18,6 +18,8 @@
 
 package org.apache.flink.api.java.hadoop.mapred;
 
+import org.apache.flink.api.common.io.FinalizeOnMaster;
+import org.apache.flink.api.common.io.FirstAttemptInitializationContext;
 import org.apache.flink.api.java.tuple.Tuple2;
 
 import org.apache.hadoop.conf.Configurable;
@@ -32,14 +34,14 @@ import org.apache.hadoop.mapred.RecordWriter;
 import org.apache.hadoop.mapred.Reporter;
 import org.apache.hadoop.mapred.TaskAttemptContext;
 import org.apache.hadoop.util.Progressable;
-import org.junit.Test;
-import org.mockito.Matchers;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentMatchers;
 import org.mockito.Mockito;
 
 import java.io.IOException;
 
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.nullable;
-import static org.mockito.Matchers.anyString;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyLong;
 import static org.mockito.Mockito.mock;
@@ -47,188 +49,195 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * Tests for {@link HadoopOutputFormat}.
- */
-public class HadoopOutputFormatTest {
+/** Tests for {@link HadoopOutputFormat}. */
+class HadoopOutputFormatTest {
 
-	@Test
-	public void testOpen() throws Exception {
+    @Test
+    void testOpen() throws Exception {
 
-		OutputFormat<String, Long> dummyOutputFormat = mock(DummyOutputFormat.class);
-		DummyOutputCommitter outputCommitter = mock(DummyOutputCommitter.class);
-		JobConf jobConf = Mockito.spy(new JobConf());
-		when(jobConf.getOutputCommitter()).thenReturn(outputCommitter);
+        OutputFormat<String, Long> dummyOutputFormat = mock(DummyOutputFormat.class);
+        DummyOutputCommitter outputCommitter = mock(DummyOutputCommitter.class);
+        JobConf jobConf = Mockito.spy(new JobConf());
+        when(jobConf.getOutputCommitter()).thenReturn(outputCommitter);
 
-		HadoopOutputFormat<String, Long> outputFormat = new HadoopOutputFormat<>(dummyOutputFormat, jobConf);
+        HadoopOutputFormat<String, Long> outputFormat =
+                new HadoopOutputFormat<>(dummyOutputFormat, jobConf);
 
-		outputFormat.open(1, 1);
+        outputFormat.open(FirstAttemptInitializationContext.of(1, 1));
 
-		verify(jobConf, times(2)).getOutputCommitter();
-		verify(outputCommitter, times(1)).setupJob(any(JobContext.class));
-		verify(dummyOutputFormat, times(1)).getRecordWriter(nullable(FileSystem.class), any(JobConf.class), anyString(), any(Progressable.class));
-	}
+        verify(jobConf, times(2)).getOutputCommitter();
+        verify(outputCommitter, times(1)).setupJob(any(JobContext.class));
+        verify(dummyOutputFormat, times(1))
+                .getRecordWriter(
+                        nullable(FileSystem.class),
+                        any(JobConf.class),
+                        anyString(),
+                        any(Progressable.class));
+    }
 
-	@Test
-	public void testConfigureWithConfigurable() {
-		ConfigurableDummyOutputFormat dummyOutputFormat = mock(ConfigurableDummyOutputFormat.class);
-		JobConf jobConf = mock(JobConf.class);
+    @Test
+    void testConfigureWithConfigurable() {
+        ConfigurableDummyOutputFormat dummyOutputFormat = mock(ConfigurableDummyOutputFormat.class);
+        JobConf jobConf = mock(JobConf.class);
 
-		HadoopOutputFormat<String, Long> outputFormat = new HadoopOutputFormat<>(dummyOutputFormat, jobConf);
+        HadoopOutputFormat<String, Long> outputFormat =
+                new HadoopOutputFormat<>(dummyOutputFormat, jobConf);
 
-		outputFormat.configure(Matchers.<org.apache.flink.configuration.Configuration>any());
+        outputFormat.configure(ArgumentMatchers.any());
 
-		verify(dummyOutputFormat, times(1)).setConf(any(Configuration.class));
-	}
+        verify(dummyOutputFormat, times(1)).setConf(any(Configuration.class));
+    }
 
-	@Test
-	public void testConfigureWithJobConfigurable() {
-		JobConfigurableDummyOutputFormat dummyOutputFormat = mock(JobConfigurableDummyOutputFormat.class);
-		JobConf jobConf = mock(JobConf.class);
+    @Test
+    void testConfigureWithJobConfigurable() {
+        JobConfigurableDummyOutputFormat dummyOutputFormat =
+                mock(JobConfigurableDummyOutputFormat.class);
+        JobConf jobConf = mock(JobConf.class);
 
-		HadoopOutputFormat<String, Long> outputFormat = new HadoopOutputFormat<>(dummyOutputFormat, jobConf);
+        HadoopOutputFormat<String, Long> outputFormat =
+                new HadoopOutputFormat<>(dummyOutputFormat, jobConf);
 
-		outputFormat.configure(Matchers.<org.apache.flink.configuration.Configuration>any());
+        outputFormat.configure(ArgumentMatchers.any());
 
-		verify(dummyOutputFormat, times(1)).configure(any(JobConf.class));
-	}
+        verify(dummyOutputFormat, times(1)).configure(any(JobConf.class));
+    }
 
-	@Test
-	public void testCloseWithTaskCommit() throws Exception {
-		OutputFormat<String, Long> dummyOutputFormat = mock(DummyOutputFormat.class);
-		DummyOutputCommitter outputCommitter = mock(DummyOutputCommitter.class);
-		when(outputCommitter.needsTaskCommit(nullable(TaskAttemptContext.class))).thenReturn(true);
-		DummyRecordWriter recordWriter = mock(DummyRecordWriter.class);
-		JobConf jobConf = mock(JobConf.class);
+    @Test
+    void testCloseWithTaskCommit() throws Exception {
+        OutputFormat<String, Long> dummyOutputFormat = mock(DummyOutputFormat.class);
+        DummyOutputCommitter outputCommitter = mock(DummyOutputCommitter.class);
+        when(outputCommitter.needsTaskCommit(nullable(TaskAttemptContext.class))).thenReturn(true);
+        DummyRecordWriter recordWriter = mock(DummyRecordWriter.class);
+        JobConf jobConf = mock(JobConf.class);
 
-		HadoopOutputFormat<String, Long> outputFormat = new HadoopOutputFormat<>(dummyOutputFormat, jobConf);
-		outputFormat.recordWriter = recordWriter;
-		outputFormat.outputCommitter = outputCommitter;
+        HadoopOutputFormat<String, Long> outputFormat =
+                new HadoopOutputFormat<>(dummyOutputFormat, jobConf);
+        outputFormat.recordWriter = recordWriter;
+        outputFormat.outputCommitter = outputCommitter;
 
-		outputFormat.close();
+        outputFormat.close();
 
-		verify(recordWriter, times(1)).close(nullable(Reporter.class));
-		verify(outputCommitter, times(1)).commitTask(nullable(TaskAttemptContext.class));
-	}
+        verify(recordWriter, times(1)).close(nullable(Reporter.class));
+        verify(outputCommitter, times(1)).commitTask(nullable(TaskAttemptContext.class));
+    }
 
-	@Test
-	public void testCloseWithoutTaskCommit() throws Exception {
-		OutputFormat<String, Long> dummyOutputFormat = mock(DummyOutputFormat.class);
-		DummyOutputCommitter outputCommitter = mock(DummyOutputCommitter.class);
-		when(outputCommitter.needsTaskCommit(any(TaskAttemptContext.class))).thenReturn(false);
-		DummyRecordWriter recordWriter = mock(DummyRecordWriter.class);
-		JobConf jobConf = mock(JobConf.class);
+    @Test
+    void testCloseWithoutTaskCommit() throws Exception {
+        OutputFormat<String, Long> dummyOutputFormat = mock(DummyOutputFormat.class);
+        DummyOutputCommitter outputCommitter = mock(DummyOutputCommitter.class);
+        when(outputCommitter.needsTaskCommit(any(TaskAttemptContext.class))).thenReturn(false);
+        DummyRecordWriter recordWriter = mock(DummyRecordWriter.class);
+        JobConf jobConf = mock(JobConf.class);
 
-		HadoopOutputFormat<String, Long> outputFormat = new HadoopOutputFormat<>(dummyOutputFormat, jobConf);
-		outputFormat.recordWriter = recordWriter;
-		outputFormat.outputCommitter = outputCommitter;
+        HadoopOutputFormat<String, Long> outputFormat =
+                new HadoopOutputFormat<>(dummyOutputFormat, jobConf);
+        outputFormat.recordWriter = recordWriter;
+        outputFormat.outputCommitter = outputCommitter;
 
-		outputFormat.close();
+        outputFormat.close();
 
-		verify(recordWriter, times(1)).close(any(Reporter.class));
-		verify(outputCommitter, times(0)).commitTask(any(TaskAttemptContext.class));
-	}
+        verify(recordWriter, times(1)).close(any(Reporter.class));
+        verify(outputCommitter, times(0)).commitTask(any(TaskAttemptContext.class));
+    }
 
-	@Test
-	public void testWriteRecord() throws Exception {
-		OutputFormat<String, Long> dummyOutputFormat = mock(DummyOutputFormat.class);
-		DummyRecordWriter recordWriter = mock(DummyRecordWriter.class);
-		JobConf jobConf = mock(JobConf.class);
+    @Test
+    void testWriteRecord() throws Exception {
+        OutputFormat<String, Long> dummyOutputFormat = mock(DummyOutputFormat.class);
+        DummyRecordWriter recordWriter = mock(DummyRecordWriter.class);
+        JobConf jobConf = mock(JobConf.class);
 
-		HadoopOutputFormat<String, Long> outputFormat = new HadoopOutputFormat<>(dummyOutputFormat, jobConf);
-		outputFormat.recordWriter = recordWriter;
+        HadoopOutputFormat<String, Long> outputFormat =
+                new HadoopOutputFormat<>(dummyOutputFormat, jobConf);
+        outputFormat.recordWriter = recordWriter;
 
-		outputFormat.writeRecord(new Tuple2<>("key", 1L));
+        outputFormat.writeRecord(new Tuple2<>("key", 1L));
 
-		verify(recordWriter, times(1)).write(anyString(), anyLong());
-	}
+        verify(recordWriter, times(1)).write(anyString(), anyLong());
+    }
 
-	@Test
-	public void testFinalizeGlobal() throws Exception {
-		OutputFormat<String, Long> dummyOutputFormat = mock(DummyOutputFormat.class);
-		DummyOutputCommitter outputCommitter = mock(DummyOutputCommitter.class);
-		JobConf jobConf = Mockito.spy(new JobConf());
-		when(jobConf.getOutputCommitter()).thenReturn(outputCommitter);
+    @Test
+    void testFinalizeGlobal() throws Exception {
+        OutputFormat<String, Long> dummyOutputFormat = mock(DummyOutputFormat.class);
+        DummyOutputCommitter outputCommitter = mock(DummyOutputCommitter.class);
+        JobConf jobConf = Mockito.spy(new JobConf());
+        when(jobConf.getOutputCommitter()).thenReturn(outputCommitter);
 
-		HadoopOutputFormat<String, Long> outputFormat = new HadoopOutputFormat<>(dummyOutputFormat, jobConf);
+        HadoopOutputFormat<String, Long> outputFormat =
+                new HadoopOutputFormat<>(dummyOutputFormat, jobConf);
 
-		outputFormat.finalizeGlobal(1);
+        outputFormat.finalizeGlobal(
+                new FinalizeOnMaster.FinalizationContext() {
+                    @Override
+                    public int getParallelism() {
+                        return 1;
+                    }
 
-		verify(outputCommitter, times(1)).commitJob(any(JobContext.class));
-	}
+                    @Override
+                    public int getFinishedAttempt(int subtaskIndex) {
+                        return 0;
+                    }
+                });
 
-	private class DummyOutputFormat implements OutputFormat<String, Long> {
+        verify(outputCommitter, times(1)).commitJob(any(JobContext.class));
+    }
 
-		@Override
-		public RecordWriter<String, Long> getRecordWriter(FileSystem fileSystem, JobConf jobConf, String s, Progressable progressable) throws IOException {
-			return null;
-		}
+    private class DummyOutputFormat implements OutputFormat<String, Long> {
 
-		@Override
-		public void checkOutputSpecs(FileSystem fileSystem, JobConf jobConf) throws IOException {
+        @Override
+        public RecordWriter<String, Long> getRecordWriter(
+                FileSystem fileSystem, JobConf jobConf, String s, Progressable progressable)
+                throws IOException {
+            return null;
+        }
 
-		}
-	}
+        @Override
+        public void checkOutputSpecs(FileSystem fileSystem, JobConf jobConf) throws IOException {}
+    }
 
-	private class ConfigurableDummyOutputFormat extends DummyOutputFormat implements Configurable {
+    private class ConfigurableDummyOutputFormat extends DummyOutputFormat implements Configurable {
 
-		@Override
-		public void setConf(Configuration configuration) {
+        @Override
+        public void setConf(Configuration configuration) {}
 
-		}
+        @Override
+        public Configuration getConf() {
+            return null;
+        }
+    }
 
-		@Override
-		public Configuration getConf() {
-			return null;
-		}
-	}
+    private class JobConfigurableDummyOutputFormat extends DummyOutputFormat
+            implements JobConfigurable {
 
-	private class JobConfigurableDummyOutputFormat extends DummyOutputFormat implements JobConfigurable {
+        @Override
+        public void configure(JobConf jobConf) {}
+    }
 
-		@Override
-		public void configure(JobConf jobConf) {
+    private class DummyOutputCommitter extends OutputCommitter {
 
-		}
-	}
+        @Override
+        public void setupJob(JobContext jobContext) throws IOException {}
 
-	private class DummyOutputCommitter extends OutputCommitter {
+        @Override
+        public void setupTask(TaskAttemptContext taskAttemptContext) throws IOException {}
 
-		@Override
-		public void setupJob(JobContext jobContext) throws IOException {
+        @Override
+        public boolean needsTaskCommit(TaskAttemptContext taskAttemptContext) throws IOException {
+            return false;
+        }
 
-		}
+        @Override
+        public void commitTask(TaskAttemptContext taskAttemptContext) throws IOException {}
 
-		@Override
-		public void setupTask(TaskAttemptContext taskAttemptContext) throws IOException {
+        @Override
+        public void abortTask(TaskAttemptContext taskAttemptContext) throws IOException {}
+    }
 
-		}
+    private class DummyRecordWriter implements RecordWriter<String, Long> {
 
-		@Override
-		public boolean needsTaskCommit(TaskAttemptContext taskAttemptContext) throws IOException {
-			return false;
-		}
+        @Override
+        public void write(String s, Long aLong) throws IOException {}
 
-		@Override
-		public void commitTask(TaskAttemptContext taskAttemptContext) throws IOException {
-
-		}
-
-		@Override
-		public void abortTask(TaskAttemptContext taskAttemptContext) throws IOException {
-
-		}
-	}
-
-	private class DummyRecordWriter implements RecordWriter<String, Long> {
-
-		@Override
-		public void write(String s, Long aLong) throws IOException {
-
-		}
-
-		@Override
-		public void close(Reporter reporter) throws IOException {
-
-		}
-	}
+        @Override
+        public void close(Reporter reporter) throws IOException {}
+    }
 }

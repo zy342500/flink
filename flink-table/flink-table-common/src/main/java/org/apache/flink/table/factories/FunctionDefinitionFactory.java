@@ -18,21 +18,31 @@
 
 package org.apache.flink.table.factories;
 
+import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.table.catalog.CatalogFunction;
 import org.apache.flink.table.functions.FunctionDefinition;
 
-/**
- * A factory to create {@link FunctionDefinition}.
- * See also {@link TableFactory} for more information.
- */
-public interface FunctionDefinitionFactory extends TableFactory {
+/** A factory to create {@link FunctionDefinition}. */
+@PublicEvolving
+public interface FunctionDefinitionFactory {
 
-	/**
-	 * Creates a {@link FunctionDefinition} from given {@link CatalogFunction}.
-	 *
-	 * @param name name of the {@link CatalogFunction}
-	 * @param catalogFunction the catalog function
-	 * @return a {@link FunctionDefinition}
-	 */
-	FunctionDefinition createFunctionDefinition(String name, CatalogFunction catalogFunction);
+    /**
+     * Creates a {@link FunctionDefinition} from given {@link CatalogFunction} with the given {@link
+     * Context} containing the class loader of the current session, which is useful when it's needed
+     * to load class from class name.
+     *
+     * @param name name of the {@link CatalogFunction}
+     * @param catalogFunction the catalog function
+     * @param context the {@link Context} for creating function definition
+     * @return a {@link FunctionDefinition}
+     */
+    FunctionDefinition createFunctionDefinition(
+            String name, CatalogFunction catalogFunction, Context context);
+
+    /** Context provided when a function definition is created. */
+    @PublicEvolving
+    interface Context {
+        /** Returns the class loader of the current session. */
+        ClassLoader getClassLoader();
+    }
 }

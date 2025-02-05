@@ -1,4 +1,4 @@
-/**
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,49 +18,51 @@
 
 package org.apache.flink.runtime.util.jartestprogram;
 
-
 import org.apache.flink.api.common.functions.FlatMapFunction;
-import org.apache.flink.api.java.DataSet;
-import org.apache.flink.api.java.ExecutionEnvironment;
+import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.datastream.DataStreamSource;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.util.Collector;
 
 public class WordCountWithInnerClass {
 
-	public static void main(String[] args) throws Exception {
-		// set up the execution environment
-		final ExecutionEnvironment env = ExecutionEnvironment.getExecutionEnvironment();
+    public static void main(String[] args) throws Exception {
+        // set up the execution environment
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
-		// get input data
-		DataSet<String> text = StaticData.getDefaultTextLineDataSet(env);
+        // get input data
+        DataStreamSource<String> text = StaticData.getDefaultTextLineDataSet(env);
 
-		DataSet<Tuple2<String, Integer>> counts =
-			// split up the lines in pairs (2-tuples) containing: (word,1)
-			text.flatMap(new Tokenizer())
-				// group by the tuple field "0" and sum up tuple field "1"
-				.groupBy(0)
-				.sum(1);
+        DataStream<Tuple2<String, Integer>> counts =
+                // split up the lines in pairs (2-tuples) containing: (word,1)
+                text.flatMap(new Tokenizer())
+                        // key by the tuple field "f0" and sum up tuple field "f1"
+                        .keyBy((KeySelector<Tuple2<String, Integer>, String>) value -> value.f0)
+                        .sum(1);
 
-		// emit result
-		counts.print();
+        // emit result
+        counts.print();
 
-		// execute program
-		env.execute("WordCount Example");
-	}
+        // execute program
+        env.execute("WordCount Example");
+    }
 
-	public static final class Tokenizer implements FlatMapFunction<String, Tuple2<String, Integer>> {
+    public static final class Tokenizer
+            implements FlatMapFunction<String, Tuple2<String, Integer>> {
 
-		@Override
-		public void flatMap(String value, Collector<Tuple2<String, Integer>> out) {
-			// normalize and split the line
-			String[] tokens = value.toLowerCase().split("\\W+");
+        @Override
+        public void flatMap(String value, Collector<Tuple2<String, Integer>> out) {
+            // normalize and split the line
+            String[] tokens = value.toLowerCase().split("\\W+");
 
-			// emit the pairs
-			for (String token : tokens) {
-				if (token.length() > 0) {
-					out.collect(new Tuple2<String, Integer>(token, 1));
-				}
-			}
-		}
-	}
+            // emit the pairs
+            for (String token : tokens) {
+                if (token.length() > 0) {
+                    out.collect(new Tuple2<String, Integer>(token, 1));
+                }
+            }
+        }
+    }
 }

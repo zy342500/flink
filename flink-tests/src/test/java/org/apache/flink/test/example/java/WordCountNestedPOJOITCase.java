@@ -19,111 +19,119 @@
 
 package org.apache.flink.test.example.java;
 
+import org.apache.flink.api.common.RuntimeExecutionMode;
 import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.common.functions.ReduceFunction;
-import org.apache.flink.api.java.DataSet;
-import org.apache.flink.api.java.ExecutionEnvironment;
+import org.apache.flink.api.common.serialization.SimpleStringEncoder;
 import org.apache.flink.api.java.tuple.Tuple3;
+import org.apache.flink.connector.file.sink.FileSink;
+import org.apache.flink.core.fs.Path;
+import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.legacy.io.TextInputFormat;
+import org.apache.flink.streaming.api.windowing.assigners.GlobalWindows;
 import org.apache.flink.test.testdata.WordCountData;
-import org.apache.flink.test.util.JavaProgramTestBase;
+import org.apache.flink.test.util.JavaProgramTestBaseJUnit4;
 import org.apache.flink.util.Collector;
 
 import java.io.Serializable;
 import java.util.Date;
 
-/**
- * WordCount with nested POJO example.
- */
+import static org.apache.flink.test.util.TestBaseUtils.compareResultsByLinesInMemory;
+
+/** WordCount with nested POJO example. */
 @SuppressWarnings("serial")
-public class WordCountNestedPOJOITCase extends JavaProgramTestBase implements Serializable {
-	private static final long serialVersionUID = 1L;
-	protected String textPath;
-	protected String resultPath;
+public class WordCountNestedPOJOITCase extends JavaProgramTestBaseJUnit4 implements Serializable {
+    private static final long serialVersionUID = 1L;
+    protected String textPath;
+    protected String resultPath;
 
-	@Override
-	protected void preSubmit() throws Exception {
-		textPath = createTempFile("text.txt", WordCountData.TEXT);
-		resultPath = getTempDirPath("result");
-	}
+    @Override
+    protected void preSubmit() throws Exception {
+        textPath = createTempFile("text.txt", WordCountData.TEXT);
+        resultPath = getTempDirPath("result");
+    }
 
-	@Override
-	protected void postSubmit() throws Exception {
-		compareResultsByLinesInMemory(WordCountData.COUNTS, resultPath);
-	}
+    @Override
+    protected void postSubmit() throws Exception {
+        compareResultsByLinesInMemory(WordCountData.COUNTS, resultPath);
+    }
 
-	@Override
-	protected void testProgram() throws Exception {
-		final ExecutionEnvironment env = ExecutionEnvironment.getExecutionEnvironment();
-		DataSet<String> text = env.readTextFile(textPath);
+    @Override
+    protected void testProgram() throws Exception {
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setRuntimeMode(RuntimeExecutionMode.BATCH);
 
-		DataSet<WC> counts = text
-				.flatMap(new Tokenizer())
-				.groupBy("complex.someTest")
-				.reduce(new ReduceFunction<WC>() {
-					private static final long serialVersionUID = 1L;
-					public WC reduce(WC value1, WC value2) {
-						return new WC(value1.complex.someTest, value1.count + value2.count);
-					}
-				});
+        DataStream<String> text = env.createInput(new TextInputFormat(new Path(textPath)));
 
-		counts.writeAsText(resultPath);
+        DataStream<WC> counts =
+                text.flatMap(new Tokenizer())
+                        .keyBy(x -> x.complex.someTest)
+                        .window(GlobalWindows.createWithEndOfStreamTrigger())
+                        .reduce(
+                                new ReduceFunction<WC>() {
+                                    private static final long serialVersionUID = 1L;
 
-		env.execute("WordCount with custom data types example");
-	}
+                                    public WC reduce(WC value1, WC value2) {
+                                        return new WC(
+                                                value1.complex.someTest,
+                                                value1.count + value2.count);
+                                    }
+                                });
 
-	private static final class Tokenizer implements FlatMapFunction<String, WC> {
+        counts.sinkTo(
+                FileSink.forRowFormat(new Path(resultPath), new SimpleStringEncoder<WC>()).build());
 
-		@Override
-		public void flatMap(String value, Collector<WC> out) {
-			// normalize and split the line
-			String[] tokens = value.toLowerCase().split("\\W+");
+        env.execute("WordCount with custom data types example");
+    }
 
-			// emit the pairs
-			for (String token : tokens) {
-				if (token.length() > 0) {
-					out.collect(new WC(token, 1));
-				}
-			}
-		}
-	}
+    private static final class Tokenizer implements FlatMapFunction<String, WC> {
 
-	/**
-	 * POJO with nested POJO.
-	 */
-	public static class WC { // is a pojo
-		public ComplexNestedClass complex; // is a pojo
-		public int count; // is a BasicType
+        @Override
+        public void flatMap(String value, Collector<WC> out) {
+            // normalize and split the line
+            String[] tokens = value.toLowerCase().split("\\W+");
 
-		public WC() {
-		}
+            // emit the pairs
+            for (String token : tokens) {
+                if (token.length() > 0) {
+                    out.collect(new WC(token, 1));
+                }
+            }
+        }
+    }
 
-		public WC(String t, int c) {
-			this.count = c;
-			this.complex = new ComplexNestedClass();
-			this.complex.word = new Tuple3<Long, Long, String>(0L, 0L, "egal");
-			this.complex.date = new Date();
-			this.complex.someFloat = 0.0f;
-			this.complex.someNumber = 666;
-			this.complex.someTest = t;
-		}
+    /** POJO with nested POJO. */
+    public static class WC { // is a pojo
+        public ComplexNestedClass complex; // is a pojo
+        public int count; // is a BasicType
 
-		@Override
-		public String toString() {
-			return this.complex.someTest + " " + count;
-		}
-	}
+        public WC() {}
 
-	/**
-	 * Nested POJO.
-	 */
-	public static class ComplexNestedClass { // pojo
-		public static int ignoreStaticField;
-		public transient int ignoreTransientField;
-		public Date date; // generic type
-		public Integer someNumber; // BasicType
-		public float someFloat; // BasicType
-		public Tuple3<Long, Long, String> word; //Tuple Type with three basic types
-		public String someTest;
-	}
+        public WC(String t, int c) {
+            this.count = c;
+            this.complex = new ComplexNestedClass();
+            this.complex.word = new Tuple3<Long, Long, String>(0L, 0L, "egal");
+            this.complex.date = new Date();
+            this.complex.someFloat = 0.0f;
+            this.complex.someNumber = 666;
+            this.complex.someTest = t;
+        }
 
+        @Override
+        public String toString() {
+            return this.complex.someTest + " " + count;
+        }
+    }
+
+    /** Nested POJO. */
+    public static class ComplexNestedClass { // pojo
+        public static int ignoreStaticField;
+        public transient int ignoreTransientField;
+        public Date date; // generic type
+        public Integer someNumber; // BasicType
+        public float someFloat; // BasicType
+        public Tuple3<Long, Long, String> word; // Tuple Type with three basic types
+        public String someTest;
+    }
 }

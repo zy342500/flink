@@ -22,95 +22,65 @@ import org.apache.flink.api.common.typeinfo.BasicTypeInfo;
 import org.apache.flink.runtime.jobgraph.OperatorID;
 import org.apache.flink.streaming.api.graph.StreamConfig;
 import org.apache.flink.streaming.api.operators.StreamMap;
-import org.apache.flink.streaming.runtime.tasks.AsyncExceptionHandler;
 import org.apache.flink.streaming.runtime.tasks.OneInputStreamTask;
 import org.apache.flink.streaming.runtime.tasks.OneInputStreamTaskTestHarness;
-import org.apache.flink.streaming.runtime.tasks.ProcessingTimeCallback;
+import org.apache.flink.streaming.runtime.tasks.ProcessingTimeService;
 import org.apache.flink.streaming.runtime.tasks.TestProcessingTimeService;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import java.util.concurrent.atomic.AtomicReference;
+import static org.assertj.core.api.Assertions.assertThat;
 
-import static org.junit.Assert.assertEquals;
+/** Tests for {@link TestProcessingTimeService}. */
+class TestProcessingTimeServiceTest {
 
-/**
- * Tests for {@link TestProcessingTimeService}.
- */
-public class TestProcessingTimeServiceTest {
+    @Test
+    void testCustomTimeServiceProvider() throws Throwable {
+        final TestProcessingTimeService tp = new TestProcessingTimeService();
 
-	@Test
-	public void testCustomTimeServiceProvider() throws Throwable {
-		final TestProcessingTimeService tp = new TestProcessingTimeService();
+        final OneInputStreamTaskTestHarness<String, String> testHarness =
+                new OneInputStreamTaskTestHarness<>(
+                        (env) -> new OneInputStreamTask<>(env, tp),
+                        BasicTypeInfo.STRING_TYPE_INFO,
+                        BasicTypeInfo.STRING_TYPE_INFO);
 
-		final OneInputStreamTaskTestHarness<String, String> testHarness = new OneInputStreamTaskTestHarness<>(
-				(env) -> new OneInputStreamTask<>(env, tp),
-				BasicTypeInfo.STRING_TYPE_INFO,
-				BasicTypeInfo.STRING_TYPE_INFO);
+        testHarness.setupOutputForSingletonOperatorChain();
 
-		testHarness.setupOutputForSingletonOperatorChain();
+        StreamConfig streamConfig = testHarness.getStreamConfig();
 
-		StreamConfig streamConfig = testHarness.getStreamConfig();
+        StreamMap<String, String> mapOperator =
+                new StreamMap<>(new StreamTaskTimerITCase.DummyMapFunction<>());
+        streamConfig.setStreamOperator(mapOperator);
+        streamConfig.setOperatorID(new OperatorID());
 
-		StreamMap<String, String> mapOperator = new StreamMap<>(new StreamTaskTimerTest.DummyMapFunction<String>());
-		streamConfig.setStreamOperator(mapOperator);
-		streamConfig.setOperatorID(new OperatorID());
+        testHarness.invoke();
+        testHarness.waitForTaskRunning();
 
-		testHarness.invoke();
+        ProcessingTimeService processingTimeService =
+                ((StreamMap<?, ?>) testHarness.getHeadOperator()).getProcessingTimeService();
 
-		final OneInputStreamTask<String, String> mapTask = testHarness.getTask();
+        assertThat(processingTimeService.getCurrentProcessingTime()).isEqualTo(Long.MIN_VALUE);
 
-		assertEquals(Long.MIN_VALUE, testHarness.getProcessingTimeService().getCurrentProcessingTime());
+        tp.setCurrentTime(11);
+        assertThat(processingTimeService.getCurrentProcessingTime()).isEqualTo(11);
 
-		tp.setCurrentTime(11);
-		assertEquals(testHarness.getProcessingTimeService().getCurrentProcessingTime(), 11);
+        tp.setCurrentTime(15);
+        tp.setCurrentTime(16);
+        assertThat(processingTimeService.getCurrentProcessingTime()).isEqualTo(16);
 
-		tp.setCurrentTime(15);
-		tp.setCurrentTime(16);
-		assertEquals(testHarness.getProcessingTimeService().getCurrentProcessingTime(), 16);
+        // register 2 tasks
+        processingTimeService.registerTimer(30, timestamp -> {});
 
-		// register 2 tasks
-		mapTask.getProcessingTimeService().registerTimer(30, new ProcessingTimeCallback() {
-			@Override
-			public void onProcessingTime(long timestamp) {
+        processingTimeService.registerTimer(40, timestamp -> {});
 
-			}
-		});
+        assertThat(tp.getNumActiveTimers()).isEqualTo(2);
 
-		mapTask.getProcessingTimeService().registerTimer(40, new ProcessingTimeCallback() {
-			@Override
-			public void onProcessingTime(long timestamp) {
+        tp.setCurrentTime(35);
+        assertThat(tp.getNumActiveTimers()).isOne();
 
-			}
-		});
+        tp.setCurrentTime(40);
+        assertThat(tp.getNumActiveTimers()).isZero();
 
-		assertEquals(2, tp.getNumActiveTimers());
-
-		tp.setCurrentTime(35);
-		assertEquals(1, tp.getNumActiveTimers());
-
-		tp.setCurrentTime(40);
-		assertEquals(0, tp.getNumActiveTimers());
-
-		tp.shutdownService();
-	}
-
-	// ------------------------------------------------------------------------
-
-	/**
-	 * An {@link AsyncExceptionHandler} storing the handled exception.
-	 */
-	public static class ReferenceSettingExceptionHandler implements AsyncExceptionHandler {
-
-		private final AtomicReference<Throwable> errorReference;
-
-		public ReferenceSettingExceptionHandler(AtomicReference<Throwable> errorReference) {
-			this.errorReference = errorReference;
-		}
-
-		@Override
-		public void handleAsyncException(String message, Throwable exception) {
-			errorReference.compareAndSet(null, exception);
-		}
-	}
+        tp.shutdownService();
+    }
 }

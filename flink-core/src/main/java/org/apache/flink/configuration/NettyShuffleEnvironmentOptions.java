@@ -18,224 +18,315 @@
 
 package org.apache.flink.configuration;
 
+import org.apache.flink.annotation.Experimental;
 import org.apache.flink.annotation.PublicEvolving;
-import org.apache.flink.annotation.docs.ConfigGroup;
-import org.apache.flink.annotation.docs.ConfigGroups;
 import org.apache.flink.annotation.docs.Documentation;
+import org.apache.flink.configuration.description.Description;
+
+import java.time.Duration;
 
 import static org.apache.flink.configuration.ConfigOptions.key;
+import static org.apache.flink.configuration.description.TextElement.code;
 
-/**
- * The set of configuration options relating to network stack.
- */
+/** The set of configuration options relating to network stack. */
 @PublicEvolving
-@ConfigGroups(groups = @ConfigGroup(name = "NetworkNetty", keyPrefix = "taskmanager.network.netty"))
 public class NettyShuffleEnvironmentOptions {
+    private static final String HYBRID_SHUFFLE_REMOTE_STORAGE_BASE_PATH_OPTION_NAME =
+            "taskmanager.network.hybrid-shuffle.remote.path";
 
-	// ------------------------------------------------------------------------
-	//  Network General Options
-	// ------------------------------------------------------------------------
+    // ------------------------------------------------------------------------
+    //  Network General Options
+    // ------------------------------------------------------------------------
 
-	/**
-	 * The default network port the task manager expects to receive transfer envelopes on. The {@code 0} means that
-	 * the TaskManager searches for a free port.
-	 */
-	public static final ConfigOption<Integer> DATA_PORT =
-		key("taskmanager.data.port")
-			.defaultValue(0)
-			.withDescription("The task manager’s port used for data exchange operations.");
+    /**
+     * The default network port the task manager expects to receive transfer envelopes on. The
+     * {@code 0} means that the TaskManager searches for a free port.
+     */
+    @Documentation.Section({
+        Documentation.Sections.COMMON_HOST_PORT,
+        Documentation.Sections.ALL_TASK_MANAGER
+    })
+    public static final ConfigOption<Integer> DATA_PORT =
+            key("taskmanager.data.port")
+                    .intType()
+                    .defaultValue(0)
+                    .withDescription(
+                            "The task manager’s external port used for data exchange operations.");
 
-	/**
-	 * Config parameter to override SSL support for taskmanager's data transport.
-	 */
-	public static final ConfigOption<Boolean> DATA_SSL_ENABLED =
-		key("taskmanager.data.ssl.enabled")
-			.defaultValue(true)
-			.withDescription("Enable SSL support for the taskmanager data transport. This is applicable only when the" +
-				" global flag for internal SSL (" + SecurityOptions.SSL_INTERNAL_ENABLED.key() + ") is set to true");
+    /** The local network port that the task manager listen at for data exchange. */
+    @Documentation.Section({
+        Documentation.Sections.COMMON_HOST_PORT,
+        Documentation.Sections.ALL_TASK_MANAGER
+    })
+    public static final ConfigOption<String> DATA_BIND_PORT =
+            key("taskmanager.data.bind-port")
+                    .stringType()
+                    .noDefaultValue()
+                    .withDescription(
+                            "The task manager's bind port used for data exchange operations."
+                                    + " Also accepts a list of ports (“50100,50101”), ranges (“50100-50200”) or a combination of both."
+                                    + " If not configured, '"
+                                    + DATA_PORT.key()
+                                    + "' will be used.");
 
-	/**
-	 * Boolean flag to enable/disable more detailed metrics about inbound/outbound network queue
-	 * lengths.
-	 */
-	public static final ConfigOption<Boolean> NETWORK_DETAILED_METRICS =
-		key("taskmanager.network.detailed-metrics")
-			.defaultValue(false)
-			.withDescription("Boolean flag to enable/disable more detailed metrics about inbound/outbound network queue lengths.");
+    /** Config parameter to override SSL support for taskmanager's data transport. */
+    @Documentation.Section(Documentation.Sections.ALL_TASK_MANAGER)
+    public static final ConfigOption<Boolean> DATA_SSL_ENABLED =
+            key("taskmanager.data.ssl.enabled")
+                    .booleanType()
+                    .defaultValue(true)
+                    .withDescription(
+                            "Enable SSL support for the taskmanager data transport. This is applicable only when the"
+                                    + " global flag for internal SSL ("
+                                    + SecurityOptions.SSL_INTERNAL_ENABLED.key()
+                                    + ") is set to true");
 
-	/**
-	 * Boolean flag to enable/disable network credit-based flow control.
-	 *
-	 * @deprecated Will be removed for Flink 1.6 when the old code will be dropped in favour of
-	 * credit-based flow control.
-	 */
-	@Deprecated
-	public static final ConfigOption<Boolean> NETWORK_CREDIT_MODEL =
-		key("taskmanager.network.credit-model")
-			.defaultValue(true)
-			.withDeprecatedKeys("taskmanager.network.credit-based-flow-control.enabled")
-			.withDescription("Boolean flag to enable/disable network credit-based flow control.");
+    /** The codec to be used when compressing shuffle data. */
+    @Documentation.Section(Documentation.Sections.ALL_TASK_MANAGER_NETWORK)
+    public static final ConfigOption<CompressionCodec> SHUFFLE_COMPRESSION_CODEC =
+            key("taskmanager.network.compression.codec")
+                    .enumType(CompressionCodec.class)
+                    .defaultValue(CompressionCodec.LZ4)
+                    .withDescription(
+                            "The codec to be used when compressing shuffle data. If it is \"NONE\", "
+                                    + "compression is disable. If it is not \"NONE\", only \"LZ4\", \"LZO\" "
+                                    + "and \"ZSTD\" are supported now. Through tpc-ds test of these "
+                                    + "three algorithms, the results show that \"LZ4\" algorithm has "
+                                    + "the highest compression and decompression speed, but the "
+                                    + "compression ratio is the lowest. \"ZSTD\" has the highest "
+                                    + "compression ratio, but the compression and decompression "
+                                    + "speed is the slowest, and LZO is between the two. Also note "
+                                    + "that this option is experimental and might be changed in the future.");
 
-	/**
-	 * Number of buffers used in the network stack. This defines the number of possible tasks and
-	 * shuffles.
-	 *
-	 * @deprecated use {@link #NETWORK_BUFFERS_MEMORY_FRACTION}, {@link #NETWORK_BUFFERS_MEMORY_MIN},
-	 * and {@link #NETWORK_BUFFERS_MEMORY_MAX} instead
-	 */
-	@Deprecated
-	public static final ConfigOption<Integer> NETWORK_NUM_BUFFERS =
-		key("taskmanager.network.numberOfBuffers")
-			.defaultValue(2048);
+    /** Supported compression codec. */
+    public enum CompressionCodec {
+        NONE,
+        LZ4,
+        LZO,
+        ZSTD
+    }
 
-	/**
-	 * Fraction of JVM memory to use for network buffers.
-	 */
-	public static final ConfigOption<Float> NETWORK_BUFFERS_MEMORY_FRACTION =
-		key("taskmanager.network.memory.fraction")
-			.defaultValue(0.1f)
-			.withDescription("Fraction of JVM memory to use for network buffers. This determines how many streaming" +
-				" data exchange channels a TaskManager can have at the same time and how well buffered the channels" +
-				" are. If a job is rejected or you get a warning that the system has not enough buffers available," +
-				" increase this value or the min/max values below. Also note, that \"taskmanager.network.memory.min\"" +
-				"` and \"taskmanager.network.memory.max\" may override this fraction.");
+    /**
+     * Boolean flag to enable/disable more detailed metrics about inbound/outbound network queue
+     * lengths.
+     */
+    @Documentation.Section(Documentation.Sections.ALL_TASK_MANAGER_NETWORK)
+    public static final ConfigOption<Boolean> NETWORK_DETAILED_METRICS =
+            key("taskmanager.network.detailed-metrics")
+                    .booleanType()
+                    .defaultValue(false)
+                    .withDescription(
+                            "Boolean flag to enable/disable more detailed metrics about inbound/outbound network queue lengths.");
 
-	/**
-	 * Minimum memory size for network buffers.
-	 */
-	public static final ConfigOption<String> NETWORK_BUFFERS_MEMORY_MIN =
-		key("taskmanager.network.memory.min")
-			.defaultValue("64mb")
-			.withDescription("Minimum memory size for network buffers.");
+    /**
+     * The maximum number of network read buffers that are required by an input gate. (An input gate
+     * is responsible for reading data from all subtasks of an upstream task.) The number of buffers
+     * needed by an input gate is dynamically calculated in runtime, depending on various factors
+     * (e.g., the parallelism of the upstream task). Among the calculated number of needed buffers,
+     * the part below this configured value is required, while the excess part, if any, is optional.
+     * A task will fail if the required buffers cannot be obtained in runtime. A task will not fail
+     * due to not obtaining optional buffers, but may suffer a performance reduction.
+     */
+    @Experimental
+    @Documentation.Section(Documentation.Sections.ALL_TASK_MANAGER_NETWORK)
+    public static final ConfigOption<Integer> NETWORK_READ_MAX_REQUIRED_BUFFERS_PER_GATE =
+            key("taskmanager.network.memory.read-buffer.required-per-gate.max")
+                    .intType()
+                    .noDefaultValue()
+                    .withDescription(
+                            "The maximum number of network read buffers that are required by an"
+                                    + " input gate. (An input gate is responsible for reading data"
+                                    + " from all subtasks of an upstream task.) The number of buffers"
+                                    + " needed by an input gate is dynamically calculated in runtime,"
+                                    + " depending on various factors (e.g., the parallelism of the"
+                                    + " upstream task). Among the calculated number of needed buffers,"
+                                    + " the part below this configured value is required, while the"
+                                    + " excess part, if any, is optional. A task will fail if the"
+                                    + " required buffers cannot be obtained in runtime. A task will"
+                                    + " not fail due to not obtaining optional buffers, but may"
+                                    + " suffer a performance reduction. If not explicitly configured,"
+                                    + " the default value is Integer.MAX_VALUE for streaming workloads,"
+                                    + " and 1000 for batch workloads. If explicitly configured, the"
+                                    + " configured value should be at least 1.");
 
-	/**
-	 * Maximum memory size for network buffers.
-	 */
-	public static final ConfigOption<String> NETWORK_BUFFERS_MEMORY_MAX =
-		key("taskmanager.network.memory.max")
-			.defaultValue("1gb")
-			.withDescription("Maximum memory size for network buffers.");
+    /**
+     * Minimum number of network buffers required per blocking result partition for sort-shuffle.
+     */
+    @Documentation.Section(Documentation.Sections.ALL_TASK_MANAGER_NETWORK)
+    public static final ConfigOption<Integer> NETWORK_SORT_SHUFFLE_MIN_BUFFERS =
+            key("taskmanager.network.sort-shuffle.min-buffers")
+                    .intType()
+                    .defaultValue(512)
+                    .withDescription(
+                            "Minimum number of network buffers required per blocking result partition"
+                                    + " for sort-shuffle. For production usage, it is suggested to "
+                                    + "increase this config value to at least 2048 (64M memory if "
+                                    + "the default 32K memory segment size is used) to improve the "
+                                    + "data compression ratio and reduce the small network packets."
+                                    + " Usually, several hundreds of megabytes memory is enough for"
+                                    + " large scale batch jobs. Note: you may also need to increase"
+                                    + " the size of total network memory to avoid the 'insufficient"
+                                    + " number of network buffers' error if you are increasing this"
+                                    + " config value.");
 
-	/**
-	 * Number of network buffers to use for each outgoing/incoming channel (subpartition/input channel).
-	 *
-	 * <p>Reasoning: 1 buffer for in-flight data in the subpartition + 1 buffer for parallel serialization.
-	 */
-	public static final ConfigOption<Integer> NETWORK_BUFFERS_PER_CHANNEL =
-		key("taskmanager.network.memory.buffers-per-channel")
-			.defaultValue(2)
-			.withDescription("Maximum number of network buffers to use for each outgoing/incoming channel (subpartition/input channel)." +
-				"In credit-based flow control mode, this indicates how many credits are exclusive in each input channel. It should be" +
-				" configured at least 2 for good performance. 1 buffer is for receiving in-flight data in the subpartition and 1 buffer is" +
-				" for parallel serialization.");
+    /** The timeout for requesting buffers for each channel. */
+    @Documentation.ExcludeFromDocumentation(
+            "This option is purely implementation related, and may be removed as the implementation changes.")
+    public static final ConfigOption<Duration> NETWORK_BUFFERS_REQUEST_TIMEOUT =
+            key("taskmanager.network.memory.buffers-request-timeout")
+                    .durationType()
+                    .defaultValue(Duration.ofMillis(30000L))
+                    .withDeprecatedKeys(
+                            "taskmanager.network.memory.exclusive-buffers-request-timeout-ms")
+                    .withDescription(
+                            "The timeout for requesting buffers for each channel. Since the number of maximum buffers and "
+                                    + "the number of required buffers is not the same for local buffer pools, there may be deadlock cases that the upstream"
+                                    + "tasks have occupied all the buffers and the downstream tasks are waiting for the exclusive buffers. The timeout breaks"
+                                    + "the tie by failing the request of exclusive buffers and ask users to increase the number of total buffers.");
 
-	/**
-	 * Number of extra network buffers to use for each outgoing/incoming gate (result partition/input gate).
-	 */
-	public static final ConfigOption<Integer> NETWORK_EXTRA_BUFFERS_PER_GATE =
-		key("taskmanager.network.memory.floating-buffers-per-gate")
-			.defaultValue(8)
-			.withDescription("Number of extra network buffers to use for each outgoing/incoming gate (result partition/input gate)." +
-				" In credit-based flow control mode, this indicates how many floating credits are shared among all the input channels." +
-				" The floating buffers are distributed based on backlog (real-time output buffers in the subpartition) feedback, and can" +
-				" help relieve back-pressure caused by unbalanced data distribution among the subpartitions. This value should be" +
-				" increased in case of higher round trip times between nodes and/or larger number of machines in the cluster.");
+    /** The option to configure the tiered factory creator remote class name for hybrid shuffle. */
+    @Documentation.Section(Documentation.Sections.ALL_TASK_MANAGER_NETWORK)
+    @Experimental
+    public static final ConfigOption<String>
+            NETWORK_HYBRID_SHUFFLE_EXTERNAL_REMOTE_TIER_FACTORY_CLASS_NAME =
+                    key("taskmanager.network.hybrid-shuffle.external-remote-tier-factory.class")
+                            .stringType()
+                            .noDefaultValue()
+                            .withDescription(
+                                    "The option configures the class that is responsible for creating an "
+                                            + "external remote tier factory for hybrid shuffle. If "
+                                            + "configured, the hybrid shuffle will only initialize "
+                                            + "the specified remote tier according to the given class "
+                                            + "name. Currently, since the tier interfaces are not yet "
+                                            + "public and are still actively evolving, it is recommended "
+                                            + "that users do not independently implement the external "
+                                            + "remote tier until the tier interfaces are stabilized. ");
 
-	/**
-	 * The timeout for requesting exclusive buffers for each channel.
-	 */
-	@Documentation.ExcludeFromDocumentation("This option is purely implementation related, and may be removed as the implementation changes.")
-	public static final ConfigOption<Long> NETWORK_EXCLUSIVE_BUFFERS_REQUEST_TIMEOUT_MILLISECONDS =
-		key("taskmanager.network.memory.exclusive-buffers-request-timeout-ms")
-			.defaultValue(30000L)
-			.withDescription("The timeout for requesting exclusive buffers for each channel. Since the number of maximum buffers and " +
-					"the number of required buffers is not the same for local buffer pools, there may be deadlock cases that the upstream" +
-					"tasks have occupied all the buffers and the downstream tasks are waiting for the exclusive buffers. The timeout breaks" +
-					"the tie by failing the request of exclusive buffers and ask users to increase the number of total buffers.");
+    /** The option to configure the base remote storage path for hybrid shuffle. */
+    @Documentation.Section(Documentation.Sections.ALL_TASK_MANAGER_NETWORK)
+    @Experimental
+    public static final ConfigOption<String> NETWORK_HYBRID_SHUFFLE_REMOTE_STORAGE_BASE_PATH =
+            key(HYBRID_SHUFFLE_REMOTE_STORAGE_BASE_PATH_OPTION_NAME)
+                    .stringType()
+                    .noDefaultValue()
+                    .withDescription(
+                            "The option is used to configure the base path of remote storage for hybrid shuffle. The shuffle data will be stored in "
+                                    + "remote storage when the disk space is not enough. "
+                                    + "Note: If this option is not configured the remote storage will be disabled.");
 
-	@Documentation.ExcludeFromDocumentation("This option is only used for testing at the moment.")
-	public static final ConfigOption<String> NETWORK_BOUNDED_BLOCKING_SUBPARTITION_TYPE =
-		key("taskmanager.network.bounded-blocking-subpartition-type")
-			.defaultValue("auto")
-			.withDescription("The bounded blocking subpartition type, either \"mmap\" or \"file\". The default \"auto\" means selecting the" +
-					"property type automatically based on system memory architecture.");
+    /**
+     * Whether to reuse tcp connections across multi jobs. If set to true, tcp connections will not
+     * be released after job finishes. The subsequent jobs will be free from the overhead of the
+     * connection re-establish. However, this may lead to an increase in the total number of
+     * connections on your machine. When it reaches the upper limit, you can set it to false to
+     * release idle connections.
+     */
+    @Documentation.Section(Documentation.Sections.ALL_TASK_MANAGER_NETWORK)
+    public static final ConfigOption<Boolean> TCP_CONNECTION_REUSE_ACROSS_JOBS_ENABLED =
+            key("taskmanager.network.tcp-connection.enable-reuse-across-jobs")
+                    .booleanType()
+                    .defaultValue(true)
+                    .withDescription(
+                            "Whether to reuse tcp connections across multi jobs. If set to true, tcp "
+                                    + "connections will not be released after job finishes. The subsequent "
+                                    + "jobs will be free from the overhead of the connection re-establish. "
+                                    + "However, this may lead to an increase in the total number of connections "
+                                    + "on your machine. When it reaches the upper limit, you can set it to false "
+                                    + "to release idle connections.");
 
-	// ------------------------------------------------------------------------
-	//  Netty Options
-	// ------------------------------------------------------------------------
+    // ------------------------------------------------------------------------
+    //  Netty Options
+    // ------------------------------------------------------------------------
 
-	public static final ConfigOption<Integer> NUM_ARENAS =
-		key("taskmanager.network.netty.num-arenas")
-			.defaultValue(-1)
-			.withDeprecatedKeys("taskmanager.net.num-arenas")
-			.withDescription("The number of Netty arenas.");
+    @Documentation.Section(Documentation.Sections.ALL_TASK_MANAGER_NETWORK)
+    public static final ConfigOption<Integer> CLIENT_CONNECT_TIMEOUT_SECONDS =
+            key("taskmanager.network.netty.client.connectTimeoutSec")
+                    .intType()
+                    .defaultValue(120) // default: 120s = 2min
+                    .withDeprecatedKeys("taskmanager.net.client.connectTimeoutSec")
+                    .withDescription("The Netty client connection timeout.");
 
-	public static final ConfigOption<Integer> NUM_THREADS_SERVER =
-		key("taskmanager.network.netty.server.numThreads")
-			.defaultValue(-1)
-			.withDeprecatedKeys("taskmanager.net.server.numThreads")
-			.withDescription("The number of Netty server threads.");
+    @Documentation.Section(Documentation.Sections.ALL_TASK_MANAGER_NETWORK)
+    public static final ConfigOption<Integer> NETWORK_RETRIES =
+            key("taskmanager.network.retries")
+                    .intType()
+                    .defaultValue(0)
+                    .withDeprecatedKeys("taskmanager.network.retries")
+                    .withDescription(
+                            "The number of retry attempts for network communication."
+                                    + " Currently it's only used for establishing input/output channel connections");
 
-	public static final ConfigOption<Integer> NUM_THREADS_CLIENT =
-		key("taskmanager.network.netty.client.numThreads")
-			.defaultValue(-1)
-			.withDeprecatedKeys("taskmanager.net.client.numThreads")
-			.withDescription("The number of Netty client threads.");
+    @Documentation.Section(Documentation.Sections.ALL_TASK_MANAGER_NETWORK)
+    public static final ConfigOption<Integer> CLIENT_TCP_KEEP_IDLE_SECONDS =
+            key("taskmanager.network.netty.client.tcp.keepIdleSec")
+                    .intType()
+                    .noDefaultValue()
+                    .withDescription(
+                            "The time (in seconds) the connection needs to remain idle before TCP starts sending keepalive probes. "
+                                    + "Note: This will not take effect when using netty transport type of nio with an older version of JDK 8, "
+                                    + "refer to https://bugs.openjdk.org/browse/JDK-8194298.");
 
-	public static final ConfigOption<Integer> CONNECT_BACKLOG =
-		key("taskmanager.network.netty.server.backlog")
-			.defaultValue(0) // default: 0 => Netty's default
-			.withDeprecatedKeys("taskmanager.net.server.backlog")
-			.withDescription("The netty server connection backlog.");
+    @Documentation.Section(Documentation.Sections.ALL_TASK_MANAGER_NETWORK)
+    public static final ConfigOption<Integer> CLIENT_TCP_KEEP_INTERVAL_SECONDS =
+            key("taskmanager.network.netty.client.tcp.keepIntervalSec")
+                    .intType()
+                    .noDefaultValue()
+                    .withDescription(
+                            "The time (in seconds) between individual keepalive probes. "
+                                    + "Note: This will not take effect when using netty transport type of nio with an older version of JDK 8, "
+                                    + "refer to https://bugs.openjdk.org/browse/JDK-8194298.");
 
-	public static final ConfigOption<Integer> CLIENT_CONNECT_TIMEOUT_SECONDS =
-		key("taskmanager.network.netty.client.connectTimeoutSec")
-			.defaultValue(120) // default: 120s = 2min
-			.withDeprecatedKeys("taskmanager.net.client.connectTimeoutSec")
-			.withDescription("The Netty client connection timeout.");
+    @Documentation.Section(Documentation.Sections.ALL_TASK_MANAGER_NETWORK)
+    public static final ConfigOption<Integer> CLIENT_TCP_KEEP_COUNT =
+            key("taskmanager.network.netty.client.tcp.keepCount")
+                    .intType()
+                    .noDefaultValue()
+                    .withDescription(
+                            "The maximum number of keepalive probes TCP should send before Netty client dropping the connection. "
+                                    + "Note: This will not take effect when using netty transport type of nio with an older version of JDK 8, "
+                                    + "refer to https://bugs.openjdk.org/browse/JDK-8194298.");
 
-	public static final ConfigOption<Integer> SEND_RECEIVE_BUFFER_SIZE =
-		key("taskmanager.network.netty.sendReceiveBufferSize")
-			.defaultValue(0) // default: 0 => Netty's default
-			.withDeprecatedKeys("taskmanager.net.sendReceiveBufferSize")
-			.withDescription("The Netty send and receive buffer size. This defaults to the system buffer size" +
-				" (cat /proc/sys/net/ipv4/tcp_[rw]mem) and is 4 MiB in modern Linux.");
+    // ------------------------------------------------------------------------
+    //  Partition Request Options
+    // ------------------------------------------------------------------------
 
-	public static final ConfigOption<String> TRANSPORT_TYPE =
-		key("taskmanager.network.netty.transport")
-			.defaultValue("nio")
-			.withDeprecatedKeys("taskmanager.net.transport")
-			.withDescription("The Netty transport type, either \"nio\" or \"epoll\"");
+    /** Minimum backoff for partition requests of input channels. */
+    @Documentation.Section(Documentation.Sections.ALL_TASK_MANAGER_NETWORK)
+    public static final ConfigOption<Integer> NETWORK_REQUEST_BACKOFF_INITIAL =
+            key("taskmanager.network.request-backoff.initial")
+                    .intType()
+                    .defaultValue(100)
+                    .withDeprecatedKeys("taskmanager.net.request-backoff.initial")
+                    .withDescription(
+                            "Minimum backoff in milliseconds for partition requests of local input channels.");
 
-	// ------------------------------------------------------------------------
-	//  Partition Request Options
-	// ------------------------------------------------------------------------
+    /** Maximum backoff for partition requests of input channels. */
+    @Documentation.Section(Documentation.Sections.ALL_TASK_MANAGER_NETWORK)
+    public static final ConfigOption<Integer> NETWORK_REQUEST_BACKOFF_MAX =
+            key("taskmanager.network.request-backoff.max")
+                    .intType()
+                    .defaultValue(10000)
+                    .withDeprecatedKeys("taskmanager.net.request-backoff.max")
+                    .withDescription(
+                            "Maximum backoff in milliseconds for partition requests of local input channels.");
 
-	/**
-	 * Minimum backoff for partition requests of input channels.
-	 */
-	public static final ConfigOption<Integer> NETWORK_REQUEST_BACKOFF_INITIAL =
-		key("taskmanager.network.request-backoff.initial")
-			.defaultValue(100)
-			.withDeprecatedKeys("taskmanager.net.request-backoff.initial")
-			.withDescription("Minimum backoff in milliseconds for partition requests of input channels.");
+    /** The timeout for partition request listener in result partition manager. */
+    @Documentation.Section(Documentation.Sections.ALL_TASK_MANAGER_NETWORK)
+    public static final ConfigOption<Duration> NETWORK_PARTITION_REQUEST_TIMEOUT =
+            key("taskmanager.network.partition-request-timeout")
+                    .durationType()
+                    .defaultValue(Duration.ofSeconds(10))
+                    .withDescription(
+                            Description.builder()
+                                    .text(
+                                            "Timeout for an individual partition request of remote input channels. "
+                                                    + "The partition request will finally fail if the total wait time exceeds "
+                                                    + "twice the value of %s.",
+                                            code(NETWORK_REQUEST_BACKOFF_MAX.key()))
+                                    .build());
 
-	/**
-	 * Maximum backoff for partition requests of input channels.
-	 */
-	public static final ConfigOption<Integer> NETWORK_REQUEST_BACKOFF_MAX =
-		key("taskmanager.network.request-backoff.max")
-			.defaultValue(10000)
-			.withDeprecatedKeys("taskmanager.net.request-backoff.max")
-			.withDescription("Maximum backoff in milliseconds for partition requests of input channels.");
+    // ------------------------------------------------------------------------
 
-	// ------------------------------------------------------------------------
-
-	@Documentation.ExcludeFromDocumentation("dev use only; likely temporary")
-	public static final ConfigOption<Boolean> FORCE_PARTITION_RELEASE_ON_CONSUMPTION =
-		key("taskmanager.network.partition.force-release-on-consumption")
-			.defaultValue(false);
-
-	/** Not intended to be instantiated. */
-	private NettyShuffleEnvironmentOptions() {}
+    /** Not intended to be instantiated. */
+    private NettyShuffleEnvironmentOptions() {}
 }

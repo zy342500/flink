@@ -19,9 +19,10 @@
 package org.apache.flink.test.classloading.jar;
 
 import org.apache.flink.api.common.functions.MapFunction;
-import org.apache.flink.api.java.DataSet;
-import org.apache.flink.api.java.ExecutionEnvironment;
-import org.apache.flink.api.java.io.DiscardingOutputFormat;
+import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.datastream.DataStreamSource;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.sink.v2.DiscardingSink;
 
 /**
  * Test class used by the {@link org.apache.flink.test.classloading.ClassLoaderITCase}.
@@ -29,45 +30,50 @@ import org.apache.flink.api.java.io.DiscardingOutputFormat;
  * <p>This class is used to test FLINK-3633
  */
 public class UserCodeType {
-	private static class CustomType {
-		private final int value;
+    private static class CustomType {
+        private final int value;
 
-		public CustomType(int value) {
-			this.value = value;
-		}
+        public CustomType(int value) {
+            this.value = value;
+        }
 
-		@Override
-		public String toString() {
-			return "CustomType(" + value + ")";
-		}
-	}
+        @Override
+        public String toString() {
+            return "CustomType(" + value + ")";
+        }
+    }
 
-	public static void main(String[] args) throws Exception {
-		ExecutionEnvironment env = ExecutionEnvironment.getExecutionEnvironment();
-		env.getConfig().disableSysoutLogging();
+    public static void main(String[] args) throws Exception {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
-		DataSet<Integer> input = env.fromElements(1, 2, 3, 4, 5);
+        DataStreamSource<Integer> input = env.fromData(1, 2, 3, 4, 5);
 
-		DataSet<CustomType> customTypes = input.map(new MapFunction<Integer, CustomType>() {
-			private static final long serialVersionUID = -5878758010124912128L;
+        DataStream<CustomType> customTypes =
+                input.map(
+                                new MapFunction<Integer, CustomType>() {
+                                    private static final long serialVersionUID =
+                                            -5878758010124912128L;
 
-			@Override
-			public CustomType map(Integer integer) throws Exception {
-				return new CustomType(integer);
-			}
-		}).rebalance();
+                                    @Override
+                                    public CustomType map(Integer integer) throws Exception {
+                                        return new CustomType(integer);
+                                    }
+                                })
+                        .rebalance();
 
-		DataSet<Integer> result = customTypes.map(new MapFunction<CustomType, Integer>() {
-			private static final long serialVersionUID = -7950126399899584991L;
+        DataStream<Integer> result =
+                customTypes.map(
+                        new MapFunction<CustomType, Integer>() {
+                            private static final long serialVersionUID = -7950126399899584991L;
 
-			@Override
-			public Integer map(CustomType value) throws Exception {
-				return value.value;
-			}
-		});
+                            @Override
+                            public Integer map(CustomType value) throws Exception {
+                                return value.value;
+                            }
+                        });
 
-		result.output(new DiscardingOutputFormat<Integer>());
+        result.sinkTo(new DiscardingSink<>());
 
-		env.execute();
-	}
+        env.execute();
+    }
 }

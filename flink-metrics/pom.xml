@@ -25,13 +25,16 @@ under the License.
 	<parent>
 		<groupId>org.apache.flink</groupId>
 		<artifactId>flink-parent</artifactId>
-		<version>1.10-SNAPSHOT</version>
-		<relativePath>..</relativePath>
+		<version>2.1-SNAPSHOT</version>
 	</parent>
 
 	<artifactId>flink-metrics</artifactId>
-	<name>flink-metrics</name>
+	<name>Flink : Metrics : </name>
 	<packaging>pom</packaging>
+
+	<properties>
+		<dropwizard.version>3.2.6</dropwizard.version>
+	</properties>
 
 	<modules>
 		<module>flink-metrics-core</module>
@@ -43,6 +46,7 @@ under the License.
 		<module>flink-metrics-statsd</module>
 		<module>flink-metrics-datadog</module>
 		<module>flink-metrics-slf4j</module>
+		<module>flink-metrics-otel</module>
 	</modules>
 
 	<!-- override these root dependencies as 'provided', so they don't end up

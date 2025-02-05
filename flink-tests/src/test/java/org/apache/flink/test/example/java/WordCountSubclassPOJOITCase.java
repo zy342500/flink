@@ -19,115 +19,125 @@
 
 package org.apache.flink.test.example.java;
 
+import org.apache.flink.api.common.RuntimeExecutionMode;
 import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.common.functions.ReduceFunction;
-import org.apache.flink.api.java.DataSet;
-import org.apache.flink.api.java.ExecutionEnvironment;
+import org.apache.flink.api.common.serialization.SimpleStringEncoder;
+import org.apache.flink.connector.file.sink.FileSink;
+import org.apache.flink.core.fs.Path;
+import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.legacy.io.TextInputFormat;
+import org.apache.flink.streaming.api.windowing.assigners.GlobalWindows;
 import org.apache.flink.test.testdata.WordCountData;
-import org.apache.flink.test.util.JavaProgramTestBase;
+import org.apache.flink.test.util.JavaProgramTestBaseJUnit4;
 import org.apache.flink.util.Collector;
 
 import java.io.Serializable;
 
-/**
- * WordCount with custom data types example.
- */
+import static org.apache.flink.test.util.TestBaseUtils.compareResultsByLinesInMemory;
+
+/** WordCount with custom data types example. */
 @SuppressWarnings("serial")
-public class WordCountSubclassPOJOITCase extends JavaProgramTestBase implements Serializable {
-	private static final long serialVersionUID = 1L;
-	protected String textPath;
-	protected String resultPath;
+public class WordCountSubclassPOJOITCase extends JavaProgramTestBaseJUnit4 implements Serializable {
+    private static final long serialVersionUID = 1L;
+    protected String textPath;
+    protected String resultPath;
 
-	@Override
-	protected void preSubmit() throws Exception {
-		textPath = createTempFile("text.txt", WordCountData.TEXT);
-		resultPath = getTempDirPath("result");
-	}
+    @Override
+    protected void preSubmit() throws Exception {
+        textPath = createTempFile("text.txt", WordCountData.TEXT);
+        resultPath = getTempDirPath("result");
+    }
 
-	@Override
-	protected void postSubmit() throws Exception {
-		compareResultsByLinesInMemory(WordCountData.COUNTS, resultPath);
-	}
+    @Override
+    protected void postSubmit() throws Exception {
+        compareResultsByLinesInMemory(WordCountData.COUNTS, resultPath);
+    }
 
-	@Override
-	protected void testProgram() throws Exception {
-		final ExecutionEnvironment env = ExecutionEnvironment.getExecutionEnvironment();
-		DataSet<String> text = env.readTextFile(textPath);
+    @Override
+    protected void testProgram() throws Exception {
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setRuntimeMode(RuntimeExecutionMode.BATCH);
 
-		DataSet<WCBase> counts = text
-				.flatMap(new Tokenizer())
-				.groupBy("word")
-				.reduce(new ReduceFunction<WCBase>() {
-					private static final long serialVersionUID = 1L;
-					public WCBase reduce(WCBase value1, WCBase value2) {
-						WC wc1 = (WC) value1;
-						WC wc2 = (WC) value2;
-						return new WC(value1.word, wc1.secretCount + wc2.secretCount);
-					}
-				})
-				.map(new MapFunction<WCBase, WCBase>() {
-					@Override
-					public WCBase map(WCBase value) throws Exception {
-						WC wc = (WC) value;
-						wc.count = wc.secretCount;
-						return wc;
-					}
-				});
+        DataStream<String> text = env.createInput(new TextInputFormat(new Path(textPath)));
 
-		counts.writeAsText(resultPath);
+        DataStream<WCBase> counts =
+                text.flatMap(new Tokenizer())
+                        .keyBy(x -> x.word)
+                        .window(GlobalWindows.createWithEndOfStreamTrigger())
+                        .reduce(
+                                new ReduceFunction<WCBase>() {
+                                    private static final long serialVersionUID = 1L;
 
-		env.execute("WordCount with custom data types example");
-	}
+                                    public WCBase reduce(WCBase value1, WCBase value2) {
+                                        WC wc1 = (WC) value1;
+                                        WC wc2 = (WC) value2;
+                                        return new WC(
+                                                value1.word, wc1.secretCount + wc2.secretCount);
+                                    }
+                                })
+                        .map(
+                                new MapFunction<WCBase, WCBase>() {
+                                    @Override
+                                    public WCBase map(WCBase value) throws Exception {
+                                        WC wc = (WC) value;
+                                        wc.count = wc.secretCount;
+                                        return wc;
+                                    }
+                                });
 
-	private static final class Tokenizer implements FlatMapFunction<String, WCBase> {
+        counts.sinkTo(
+                FileSink.forRowFormat(new Path(resultPath), new SimpleStringEncoder<WCBase>())
+                        .build());
 
-		@Override
-		public void flatMap(String value, Collector<WCBase> out) {
-			// normalize and split the line
-			String[] tokens = value.toLowerCase().split("\\W+");
-			// emit the pairs
-			for (String token : tokens) {
-				if (token.length() > 0) {
-					out.collect(new WC(token, 1));
-				}
-			}
-		}
-	}
+        env.execute("WordCount with custom data types example");
+    }
 
-	/**
-	 * Abstract POJO.
-	 */
-	public abstract static class WCBase {
-		public String word;
-		public int count;
+    private static final class Tokenizer implements FlatMapFunction<String, WCBase> {
 
-		public WCBase(String w, int c) {
-			this.word = w;
-			this.count = c;
-		}
+        @Override
+        public void flatMap(String value, Collector<WCBase> out) {
+            // normalize and split the line
+            String[] tokens = value.toLowerCase().split("\\W+");
+            // emit the pairs
+            for (String token : tokens) {
+                if (token.length() > 0) {
+                    out.collect(new WC(token, 1));
+                }
+            }
+        }
+    }
 
-		@Override
-		public String toString() {
-			return word + " " + count;
-		}
-	}
+    /** Abstract POJO. */
+    public abstract static class WCBase {
+        public String word;
+        public int count;
 
-	/**
-	 * Subclass of abstract POJO.
-	 */
-	public static class WC extends WCBase {
+        public WCBase(String w, int c) {
+            this.word = w;
+            this.count = c;
+        }
 
-		public int secretCount;
+        @Override
+        public String toString() {
+            return word + " " + count;
+        }
+    }
 
-		public WC() {
-			super(null, 0);
-		}
+    /** Subclass of abstract POJO. */
+    public static class WC extends WCBase {
 
-		public WC(String w, int c) {
-			super(w, 0);
-			this.secretCount = c;
-		}
-	}
+        public int secretCount;
 
+        public WC() {
+            super(null, 0);
+        }
+
+        public WC(String w, int c) {
+            super(w, 0);
+            this.secretCount = c;
+        }
+    }
 }

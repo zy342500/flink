@@ -18,70 +18,130 @@
 
 package org.apache.flink.runtime.rest.handler;
 
-import org.apache.flink.api.common.time.Time;
+import org.apache.flink.configuration.ClusterOptions;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.configuration.RestOptions;
 import org.apache.flink.configuration.WebOptions;
 import org.apache.flink.util.Preconditions;
 
 import java.io.File;
+import java.time.Duration;
 
-/**
- * Configuration object containing values for the rest handler configuration.
- */
+/** Configuration object containing values for the rest handler configuration. */
 public class RestHandlerConfiguration {
 
-	private final long refreshInterval;
+    private final long refreshInterval;
 
-	private final int maxCheckpointStatisticCacheEntries;
+    private final int checkpointHistorySize;
 
-	private final Time timeout;
+    private final Duration checkpointCacheExpireAfterWrite;
 
-	private final File webUiDir;
+    private final int checkpointCacheSize;
 
-	public RestHandlerConfiguration(
-			long refreshInterval,
-			int maxCheckpointStatisticCacheEntries,
-			Time timeout,
-			File webUiDir) {
-		Preconditions.checkArgument(refreshInterval > 0L, "The refresh interval (ms) should be larger than 0.");
-		this.refreshInterval = refreshInterval;
+    private final Duration timeout;
 
-		this.maxCheckpointStatisticCacheEntries = maxCheckpointStatisticCacheEntries;
+    private final File webUiDir;
 
-		this.timeout = Preconditions.checkNotNull(timeout);
-		this.webUiDir = Preconditions.checkNotNull(webUiDir);
-	}
+    private final boolean webSubmitEnabled;
 
-	public long getRefreshInterval() {
-		return refreshInterval;
-	}
+    private final boolean webCancelEnabled;
 
-	public int getMaxCheckpointStatisticCacheEntries() {
-		return maxCheckpointStatisticCacheEntries;
-	}
+    private final boolean webRescaleEnabled;
 
-	public Time getTimeout() {
-		return timeout;
-	}
+    public RestHandlerConfiguration(
+            long refreshInterval,
+            int checkpointHistorySize,
+            Duration checkpointCacheExpireAfterWrite,
+            int checkpointCacheSize,
+            Duration timeout,
+            File webUiDir,
+            boolean webSubmitEnabled,
+            boolean webCancelEnabled,
+            boolean webRescaleEnabled) {
+        Preconditions.checkArgument(
+                refreshInterval > 0L, "The refresh interval (ms) should be larger than 0.");
+        this.refreshInterval = refreshInterval;
 
-	public File getWebUiDir() {
-		return webUiDir;
-	}
+        this.checkpointHistorySize = checkpointHistorySize;
+        this.checkpointCacheExpireAfterWrite = checkpointCacheExpireAfterWrite;
+        this.checkpointCacheSize = checkpointCacheSize;
 
-	public static RestHandlerConfiguration fromConfiguration(Configuration configuration) {
-		final long refreshInterval = configuration.getLong(WebOptions.REFRESH_INTERVAL);
+        this.timeout = Preconditions.checkNotNull(timeout);
+        this.webUiDir = Preconditions.checkNotNull(webUiDir);
+        this.webSubmitEnabled = webSubmitEnabled;
+        this.webCancelEnabled = webCancelEnabled;
+        this.webRescaleEnabled = webRescaleEnabled;
+    }
 
-		final int maxCheckpointStatisticCacheEntries = configuration.getInteger(WebOptions.CHECKPOINTS_HISTORY_SIZE);
+    public long getRefreshInterval() {
+        return refreshInterval;
+    }
 
-		final Time timeout = Time.milliseconds(configuration.getLong(WebOptions.TIMEOUT));
+    public int getCheckpointHistorySize() {
+        return checkpointHistorySize;
+    }
 
-		final String rootDir = "flink-web-ui";
-		final File webUiDir = new File(configuration.getString(WebOptions.TMP_DIR), rootDir);
+    public Duration getCheckpointCacheExpireAfterWrite() {
+        return checkpointCacheExpireAfterWrite;
+    }
 
-		return new RestHandlerConfiguration(
-			refreshInterval,
-			maxCheckpointStatisticCacheEntries,
-			timeout,
-			webUiDir);
-	}
+    public int getCheckpointCacheSize() {
+        return checkpointCacheSize;
+    }
+
+    public Duration getTimeout() {
+        return timeout;
+    }
+
+    public File getWebUiDir() {
+        return webUiDir;
+    }
+
+    public boolean isWebSubmitEnabled() {
+        return webSubmitEnabled;
+    }
+
+    public boolean isWebCancelEnabled() {
+        return webCancelEnabled;
+    }
+
+    public boolean isWebRescaleEnabled() {
+        return webRescaleEnabled;
+    }
+
+    public static RestHandlerConfiguration fromConfiguration(Configuration configuration) {
+        final long refreshInterval = configuration.get(WebOptions.REFRESH_INTERVAL).toMillis();
+
+        final int checkpointHistorySize = configuration.get(WebOptions.CHECKPOINTS_HISTORY_SIZE);
+        final Duration checkpointStatsSnapshotCacheExpireAfterWrite =
+                configuration
+                        .getOptional(RestOptions.CACHE_CHECKPOINT_STATISTICS_TIMEOUT)
+                        .orElse(Duration.ofMillis(refreshInterval));
+        final int checkpointStatsSnapshotCacheSize =
+                configuration.get(RestOptions.CACHE_CHECKPOINT_STATISTICS_SIZE);
+
+        final Duration timeout = configuration.get(WebOptions.TIMEOUT);
+
+        final String rootDir = "flink-web-ui";
+        final File webUiDir = new File(configuration.get(WebOptions.TMP_DIR), rootDir);
+
+        final boolean webSubmitEnabled = configuration.get(WebOptions.SUBMIT_ENABLE);
+        final boolean webCancelEnabled = configuration.get(WebOptions.CANCEL_ENABLE);
+        final boolean webRescaleSupported =
+                ClusterOptions.isAdaptiveSchedulerEnabled(configuration)
+                        && !ClusterOptions.isReactiveModeEnabled(configuration);
+        final boolean webRescaleEnabled =
+                webRescaleSupported && configuration.get(WebOptions.RESCALE_ENABLE);
+
+        return new RestHandlerConfiguration(
+                refreshInterval,
+                checkpointHistorySize,
+                checkpointStatsSnapshotCacheExpireAfterWrite,
+                checkpointStatsSnapshotCacheSize,
+                timeout,
+                webUiDir,
+                webSubmitEnabled,
+                webCancelEnabled,
+                webRescaleEnabled);
+    }
 }

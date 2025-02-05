@@ -20,12 +20,13 @@ package org.apache.flink.formats.avro.testjar;
 
 import org.apache.flink.api.common.functions.RichMapFunction;
 import org.apache.flink.api.common.functions.RichReduceFunction;
-import org.apache.flink.api.java.DataSet;
-import org.apache.flink.api.java.ExecutionEnvironment;
-import org.apache.flink.api.java.io.DiscardingOutputFormat;
+import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.core.fs.Path;
 import org.apache.flink.formats.avro.AvroInputFormat;
+import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.sink.v2.DiscardingSink;
 
 import org.apache.avro.file.DataFileWriter;
 import org.apache.avro.io.DatumWriter;
@@ -38,174 +39,184 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
-/**
- * This file defines the classes for the AvroExternalJarProgramITCase.
- */
-public class AvroExternalJarProgram  {
+/** This file defines the classes for the AvroExternalJarProgramITCase. */
+public class AvroExternalJarProgram {
 
-	private static final class Color {
+    private static final class Color {
 
-		private String name;
-		private double saturation;
+        private String name;
+        private double saturation;
 
-		public Color() {
-			name = "";
-			saturation = 1.0;
-		}
+        public Color() {
+            name = "";
+            saturation = 1.0;
+        }
 
-		public Color(String name, double saturation) {
-			this.name = name;
-			this.saturation = saturation;
-		}
+        public Color(String name, double saturation) {
+            this.name = name;
+            this.saturation = saturation;
+        }
 
-		public String getName() {
-			return name;
-		}
+        public String getName() {
+            return name;
+        }
 
-		public void setName(String name) {
-			this.name = name;
-		}
+        public void setName(String name) {
+            this.name = name;
+        }
 
-		public double getSaturation() {
-			return saturation;
-		}
+        public double getSaturation() {
+            return saturation;
+        }
 
-		public void setSaturation(double saturation) {
-			this.saturation = saturation;
-		}
+        public void setSaturation(double saturation) {
+            this.saturation = saturation;
+        }
 
-		@Override
-		public String toString() {
-			return name + '(' + saturation + ')';
-		}
-	}
+        @Override
+        public String toString() {
+            return name + '(' + saturation + ')';
+        }
+    }
 
-	private static final class MyUser {
+    private static final class MyUser {
 
-		private String name;
-		private List<Color> colors;
+        private String name;
+        private List<Color> colors;
 
-		public MyUser() {
-			name = "unknown";
-			colors = new ArrayList<Color>();
-		}
+        public MyUser() {
+            name = "unknown";
+            colors = new ArrayList<Color>();
+        }
 
-		public MyUser(String name, List<Color> colors) {
-			this.name = name;
-			this.colors = colors;
-		}
+        public MyUser(String name, List<Color> colors) {
+            this.name = name;
+            this.colors = colors;
+        }
 
-		public String getName() {
-			return name;
-		}
+        public String getName() {
+            return name;
+        }
 
-		public List<Color> getColors() {
-			return colors;
-		}
+        public List<Color> getColors() {
+            return colors;
+        }
 
-		public void setName(String name) {
-			this.name = name;
-		}
+        public void setName(String name) {
+            this.name = name;
+        }
 
-		public void setColors(List<Color> colors) {
-			this.colors = colors;
-		}
+        public void setColors(List<Color> colors) {
+            this.colors = colors;
+        }
 
-		@Override
-		public String toString() {
-			return name + " : " + colors;
-		}
-	}
+        @Override
+        public String toString() {
+            return name + " : " + colors;
+        }
+    }
 
-	// --------------------------------------------------------------------------------------------
+    // --------------------------------------------------------------------------------------------
 
-	// --------------------------------------------------------------------------------------------
+    // --------------------------------------------------------------------------------------------
 
-	private static final class NameExtractor extends RichMapFunction<MyUser, Tuple2<String, MyUser>> {
-		private static final long serialVersionUID = 1L;
+    private static final class NameExtractor
+            extends RichMapFunction<MyUser, Tuple2<String, MyUser>> {
+        private static final long serialVersionUID = 1L;
 
-		@Override
-		public Tuple2<String, MyUser> map(MyUser u) {
-			String namePrefix = u.getName().substring(0, 1);
-			return new Tuple2<String, MyUser>(namePrefix, u);
-		}
-	}
+        @Override
+        public Tuple2<String, MyUser> map(MyUser u) {
+            String namePrefix = u.getName().substring(0, 1);
+            return new Tuple2<String, MyUser>(namePrefix, u);
+        }
+    }
 
-	private static final class NameGrouper extends RichReduceFunction<Tuple2<String, MyUser>> {
-		private static final long serialVersionUID = 1L;
+    private static final class NameGrouper extends RichReduceFunction<Tuple2<String, MyUser>> {
+        private static final long serialVersionUID = 1L;
 
-		@Override
-		public Tuple2<String, MyUser> reduce(Tuple2<String, MyUser> val1, Tuple2<String, MyUser> val2) {
-			return val1;
-		}
-	}
+        @Override
+        public Tuple2<String, MyUser> reduce(
+                Tuple2<String, MyUser> val1, Tuple2<String, MyUser> val2) {
+            return val1;
+        }
+    }
 
-	// --------------------------------------------------------------------------------------------
-	//  Test Data
-	// --------------------------------------------------------------------------------------------
+    private static final class KeyAssigner implements KeySelector<Tuple2<String, MyUser>, String> {
 
-	private static final class Generator {
+        @Override
+        public String getKey(Tuple2<String, MyUser> record) throws Exception {
+            return record.f0;
+        }
+    }
 
-		private final Random rnd = new Random(2389756789345689276L);
+    // --------------------------------------------------------------------------------------------
+    //  Test Data
+    // --------------------------------------------------------------------------------------------
 
-		public MyUser nextUser() {
-			return randomUser();
-		}
+    private static final class Generator {
 
-		private MyUser randomUser() {
+        private final Random rnd = new Random(2389756789345689276L);
 
-			int numColors = rnd.nextInt(5);
-			ArrayList<Color> colors = new ArrayList<Color>(numColors);
-			for (int i = 0; i < numColors; i++) {
-				colors.add(new Color(randomString(), rnd.nextDouble()));
-			}
+        public MyUser nextUser() {
+            return randomUser();
+        }
 
-			return new MyUser(randomString(), colors);
-		}
+        private MyUser randomUser() {
 
-		private String randomString() {
-			char[] c = new char[this.rnd.nextInt(20) + 5];
+            int numColors = rnd.nextInt(5);
+            ArrayList<Color> colors = new ArrayList<Color>(numColors);
+            for (int i = 0; i < numColors; i++) {
+                colors.add(new Color(randomString(), rnd.nextDouble()));
+            }
 
-			for (int i = 0; i < c.length; i++) {
-				c[i] = (char) (this.rnd.nextInt(150) + 40);
-			}
+            return new MyUser(randomString(), colors);
+        }
 
-			return new String(c);
-		}
-	}
+        private String randomString() {
+            char[] c = new char[this.rnd.nextInt(20) + 5];
 
-	public static void writeTestData(File testFile, int numRecords) throws IOException {
+            for (int i = 0; i < c.length; i++) {
+                c[i] = (char) (this.rnd.nextInt(150) + 40);
+            }
 
-		DatumWriter<MyUser> userDatumWriter = new ReflectDatumWriter<MyUser>(MyUser.class);
-		DataFileWriter<MyUser> dataFileWriter = new DataFileWriter<MyUser>(userDatumWriter);
+            return new String(c);
+        }
+    }
 
-		dataFileWriter.create(ReflectData.get().getSchema(MyUser.class), testFile);
+    public static void writeTestData(File testFile, int numRecords) throws IOException {
 
-		Generator generator = new Generator();
+        DatumWriter<MyUser> userDatumWriter = new ReflectDatumWriter<MyUser>(MyUser.class);
+        DataFileWriter<MyUser> dataFileWriter = new DataFileWriter<MyUser>(userDatumWriter);
 
-		for (int i = 0; i < numRecords; i++) {
-			MyUser user = generator.nextUser();
-			dataFileWriter.append(user);
-		}
+        dataFileWriter.create(ReflectData.get().getSchema(MyUser.class), testFile);
 
-		dataFileWriter.close();
-	}
+        Generator generator = new Generator();
 
-//	public static void main(String[] args) throws Exception {
-//		String testDataFile = new File("src/test/resources/testdata.avro").getAbsolutePath();
-//		writeTestData(new File(testDataFile), 50);
-//	}
+        for (int i = 0; i < numRecords; i++) {
+            MyUser user = generator.nextUser();
+            dataFileWriter.append(user);
+        }
 
-	public static void main(String[] args) throws Exception {
-		String inputPath = args[0];
+        dataFileWriter.close();
+    }
 
-		ExecutionEnvironment env = ExecutionEnvironment.getExecutionEnvironment();
+    //	public static void main(String[] args) throws Exception {
+    //		String testDataFile = new File("src/test/resources/testdata.avro").getAbsolutePath();
+    //		writeTestData(new File(testDataFile), 50);
+    //	}
 
-		DataSet<MyUser> input = env.createInput(new AvroInputFormat<MyUser>(new Path(inputPath), MyUser.class));
+    public static void main(String[] args) throws Exception {
+        String inputPath = args[0];
 
-		DataSet<Tuple2<String, MyUser>> result = input.map(new NameExtractor()).groupBy(0).reduce(new NameGrouper());
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
-		result.output(new DiscardingOutputFormat<Tuple2<String, MyUser>>());
-		env.execute();
-	}
+        DataStream<MyUser> input =
+                env.createInput(new AvroInputFormat<MyUser>(new Path(inputPath), MyUser.class));
+
+        DataStream<Tuple2<String, MyUser>> result =
+                input.map(new NameExtractor()).keyBy(new KeyAssigner()).reduce(new NameGrouper());
+
+        result.sinkTo(new DiscardingSink<>());
+        env.execute();
+    }
 }
